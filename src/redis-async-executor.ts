@@ -1,17 +1,22 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 import RedisPubSub, { IRedisExecutorOptions } from "./utils/redis-pub-sub";
 import Logger from "./utils/logger";
-import { EventHandler, IAsyncExecutor } from "./IAsyncExecutor";
+import EventHandlerExecutor, { EventHandler, IAsyncExecutor, IEventHandlerOptions, } from "./IAsyncExecutor";
 
 const logger = new Logger("RedisAsyncExecutor");
 
 export class RedisAsyncExecutor implements IAsyncExecutor {
-  eventRegistry: Record<string, EventHandler> = {};
+  eventRegistry: Record<string, EventHandlerExecutor> = {};
   private redisClientRegistry: Record<string, RedisPubSub<any>> = {};
-  private readonly options: IRedisExecutorOptions;
+  private readonly redisOptions: IRedisExecutorOptions;
+  readonly handlerOptions: IEventHandlerOptions;
 
-  constructor(options: IRedisExecutorOptions) {
-    this.options = options;
+  constructor(
+    redisOptions: IRedisExecutorOptions,
+    handlerOptions: IEventHandlerOptions,
+  ) {
+    this.redisOptions = redisOptions;
+    this.handlerOptions = handlerOptions;
   }
 
   processAsync(eventName: string, args: any[]): void {
@@ -27,12 +32,21 @@ export class RedisAsyncExecutor implements IAsyncExecutor {
 
   registerEvent(eventName: string, handler: EventHandler): void {
     if (!this.eventRegistry[eventName]) {
-      this.eventRegistry[eventName] = handler;
+      const eventHandler = new EventHandlerExecutor(
+        this.handlerOptions,
+        eventName,
+        handler,
+      );
+      this.eventRegistry[eventName] = eventHandler;
 
       logger.info("Registering event :", eventName);
-      const client = new RedisPubSub<any>(this.options);
+      const client = new RedisPubSub<any>(
+        this.redisOptions,
+        eventName,
+        eventHandler,
+      );
       client
-        .subscribeToTopic(eventName, handler)
+        .subscribe()
         .then(() => logger.info("Event registered successfully"));
 
       this.redisClientRegistry[eventName] = client;

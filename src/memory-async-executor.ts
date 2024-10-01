@@ -1,8 +1,7 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 import EventEmitter from "node:events";
 import Logger from "./utils/logger";
-import { EventHandler, IAsyncExecutor } from "./IAsyncExecutor";
-import { executeAsyncEvent } from "./utils/handler-wrapper";
+import EventHandlerExecutor, { EventHandler, IAsyncExecutor, IEventHandlerOptions, } from "./IAsyncExecutor";
 
 const logger = new Logger("Memory-async-executor");
 
@@ -10,20 +9,27 @@ export default class MemoryAsyncExecutor
   extends EventEmitter
   implements IAsyncExecutor
 {
-  eventRegistry: Record<string, EventHandler> = {};
+  eventRegistry: Record<string, EventHandlerExecutor> = {};
+  readonly handlerOptions: IEventHandlerOptions;
 
-  constructor() {
+  constructor(options: IEventHandlerOptions) {
     super();
+    this.handlerOptions = options;
   }
 
   public registerEvent(eventName: string, handler: EventHandler): void {
     if (!this.eventRegistry[eventName]) {
-      this.eventRegistry[eventName] = handler;
+      const eventHandler = new EventHandlerExecutor(
+        this.handlerOptions,
+        eventName,
+        handler,
+      );
+      this.eventRegistry[eventName] = eventHandler;
 
       logger.info("Registering event :", eventName);
 
       this.on(eventName, async (args: any[]) => {
-        await executeAsyncEvent(handler, args);
+        await eventHandler.executeHandler(args);
       });
     }
   }

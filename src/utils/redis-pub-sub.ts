@@ -1,7 +1,6 @@
 import Redis, { RedisOptions } from "ioredis";
 import Logger from "./logger";
-import { EventHandler } from "../IAsyncExecutor";
-import { executeAsyncEvent } from "./handler-wrapper";
+import EventHandlerExecutor from "../IAsyncExecutor";
 
 const logger = new Logger("RedisPubSubProvider");
 
@@ -11,14 +10,21 @@ export interface IRedisExecutorOptions {
 }
 
 export default class RedisPubSub<K> {
-  private topic?: string;
-  private handler?: EventHandler;
+  private readonly topic: string;
+  private handler: EventHandlerExecutor;
   readonly options: IRedisExecutorOptions;
   private static pubClient: Redis;
   private static subClient: Redis;
 
-  constructor(options: IRedisExecutorOptions) {
+  constructor(
+    options: IRedisExecutorOptions,
+    topic: string,
+    handler: EventHandlerExecutor,
+  ) {
     this.options = options;
+    this.topic = topic;
+    this.handler = handler;
+
     RedisPubSub.pubClient = new Redis(options.redis);
     RedisPubSub.subClient = new Redis(options.redis);
 
@@ -29,11 +35,9 @@ export default class RedisPubSub<K> {
 
         logger.info(`Received message for topic: ${topic} : ${message}`);
 
-        if (this.handler != null) {
-          /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
-          const data = JSON.parse(message) as { args: any[] };
-          await executeAsyncEvent(this.handler, data.args);
-        }
+        /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
+        const data = JSON.parse(message) as { args: any[] };
+        await this.handler.executeHandler(data.args);
       },
     );
   }
@@ -42,21 +46,7 @@ export default class RedisPubSub<K> {
     return this.options.prefix ?? "" + this.topic;
   }
 
-  public async subscribeToTopic(
-    topic: string,
-    handler: EventHandler,
-  ): Promise<void> {
-    if (!topic) {
-      throw new Error("Topic cannot be undefined");
-    }
-
-    if (!handler) {
-      throw new Error("Handler cannot be undefined");
-    }
-
-    this.topic = topic;
-    this.handler = handler;
-
+  public async subscribe(): Promise<void> {
     await RedisPubSub.subClient.subscribe(this.getTopic(), (err, count) => {
       if (err) {
         logger.error("Failed to subscribe to topic: ", err);
